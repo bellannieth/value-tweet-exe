@@ -214,11 +214,11 @@ export default function App() {
         flex: 1,
         display: "grid",
         gridTemplateColumns: "340px 1fr",
-        gap: "32px",
         maxWidth: "1100px",
         width: "100%",
         margin: "0 auto",
         padding: "32px 24px",
+        gap: "32px",
         boxSizing: "border-box",
       }}>
 

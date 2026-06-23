@@ -1,5 +1,3 @@
-import fetch from 'node-fetch';
-
 export default async function handler(req, res) {
   const proxyKey = process.env.PROXY_KEY;
   if (proxyKey) {
