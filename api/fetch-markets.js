@@ -5,11 +5,11 @@ export default async function handler(req, res) {
     if (!provided || provided !== proxyKey) return res.status(401).json({ error: 'missing or invalid proxy key' });
   }
   try {
-    // primary candidate
+    // Polymarket's public Gamma API. Order by liquidity (desc) and exclude
+    // closed markets; fall back to a plain active-markets query.
     const endpoints = [
-      'https://polymarket.com/api/markets?limit=10&sort=liquidity_desc',
-      'https://polymarket.com/api/markets?limit=10',
-      'https://api.polymarket.com/markets?limit=10&sort=liquidity:desc',
+      'https://gamma-api.polymarket.com/markets?active=true&closed=false&order=liquidity&ascending=false&limit=20',
+      'https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=20',
     ];
     for (const url of endpoints) {
       try {

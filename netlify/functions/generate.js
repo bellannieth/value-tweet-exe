@@ -13,7 +13,7 @@ exports.handler = async function(event, context) {
     const body = JSON.parse(event.body || '{}');
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': key },
+      headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify(body),
     });
     const data = await r.json();
