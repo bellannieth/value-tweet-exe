@@ -23,43 +23,67 @@ const TONES = [
 const SYSTEM_PROMPT = `You are a ghost-writer for a prediction markets expert who goes by Bellannie (@Bellannieth) on X.
 
 Her voice rules — non-negotiable:
-- all lowercase, always
-- no emojis, no hashtags in body copy
+- all lowercase, ALWAYS. never capitalize the first letter of a sentence or proper nouns. "openai" not "OpenAI". "trump" not "Trump".
+- no emojis, no hashtags
 - cold, declarative prose. no hype, no "this is wild" energy
-- negative hooks perform best for her: "most people don't know...", "nobody talks about...", "the thing they don't tell you...", "you're reading this wrong"
-- she writes from lived experience trading prediction markets (primarily Polymarket), tracking whale wallets, and building market analysis tools
-- she references real mechanics: YES/NO spreads, liquidity depth, resolution criteria edge, both-sides whale strategy, implied probability, calibration
 - short sentences. hard stops. no softening language
+- she trades real money on Polymarket and reads markets through implied probability, liquidity, and resolution criteria
 
-Tweet structure:
-- line 1 = HOOK. must make someone stop scrolling. use her negative-hook patterns
-- body = 2-5 lines of actual value. specific, not vague. the kind of thing you'd only know if you'd traded real money
-- optional closer = a short, cold observation that lands like a period at the end of a paragraph
-- NO "follow for more", NO "save this", NO "thread below"
+When writing a tweet reacting to a live market, the format is:
+- line 1: the news / what's driving the market right now, stated flat and factual
+- line 2: the current probability stated plainly — "now a 29% chance" / "sitting at 29%" / "the market has it at 29%"
+- then the polymarket link on its own line at the very end, exactly as given
 
-Output format: return ONLY the tweet text. nothing else. no quotes, no commentary, no explanation. just the tweet.`;
+Output format: return ONLY the tweet text. nothing else. no quotes, no commentary, no preamble. all lowercase. just the tweet.`;
 
-function buildPrompt(angle, tone, context, market) {
+function buildMarketPrompt(angle, tone, context, market) {
+  const probLine = market.probability != null
+    ? (market.binary
+        ? `current probability: ${market.probability}% (yes)`
+        : `leading outcome: ${market.leader} at ${market.probability}%`)
+    : `current probability: unknown — find it if you can`;
+
+  const toneMap = {
+    cold: "voice: cold, flat, declarative. state facts. no color.",
+    contrarian: "voice: contrarian. point out what the crowd is getting wrong about this market.",
+    tactical: "voice: tactical. note the actual trading angle — is the market mispriced, is there edge.",
+  };
+
+  const ctx = context.trim()
+    ? `\n\nextra context from bellannie (work in naturally, don't quote): "${context.trim()}"`
+    : "";
+
+  return `write a tweet reacting to this live polymarket market.
+
+market: ${market.title}
+${probLine}
+link: ${market.url}
+
+${toneMap[tone]}${ctx}
+
+steps:
+1. use the web_search tool to find the most recent news (last few days) explaining WHY this market is where it is or why the odds are moving. search the actual event, not generic terms.
+2. write the tweet: open with what's driving it (grounded in the real news you found), state the ${market.probability != null ? `${market.probability}%` : "current"} probability plainly, then the link on its own line at the end.
+
+all lowercase. cold. factual. 1-3 short lines before the link. return ONLY the tweet.`;
+}
+
+function buildEvergreenPrompt(angle, tone, context) {
   const angleMap = {
-    myth: "Expose a common misconception prediction market traders have. The hook should make experienced traders question something they assumed was true.",
-    edge: "Share a hidden signal or pattern in prediction markets that gives an edge. Something specific — about liquidity, timing, resolution criteria, or whale behavior.",
-    mistake: "Call out a costly mistake beginners make on Polymarket or prediction markets in general. Be specific about what they do wrong and why it bleeds money.",
-    framework: "Give a mental model for reading prediction market odds. Something reusable — how to spot mispricing, how to interpret volume, how to think about probability.",
-    number: "Lead with a specific number, stat, or data point about prediction markets that reframes how someone should think about trading them.",
-    contrast: "Contrast what prediction markets look like from the outside vs what they actually are for someone who trades them seriously.",
+    myth: "expose a common misconception prediction market traders have.",
+    edge: "share a hidden signal or pattern in prediction markets that gives an edge.",
+    mistake: "call out a costly mistake beginners make on polymarket.",
+    framework: "give a reusable mental model for reading prediction market odds.",
+    number: "lead with a specific number or stat about prediction markets that reframes how to think.",
+    contrast: "contrast what prediction markets look like from outside vs what they are for serious traders.",
   };
   const toneMap = {
-    cold: "Voice: cold, flat, declarative. State facts. No color.",
-    contrarian: "Voice: contrarian. Take the position most people won't say out loud. Make the consensus look naive.",
-    tactical: "Voice: tactical and direct. Give concrete, actionable knowledge. No theory, only what you'd actually do.",
+    cold: "voice: cold, flat, declarative. state facts. no color.",
+    contrarian: "voice: contrarian. make the consensus look naive.",
+    tactical: "voice: tactical and direct. only what you'd actually do.",
   };
-  const contextLine = context.trim()
-    ? `\n\nExtra context from the user (incorporate this naturally, don't quote it directly): "${context.trim()}"`
-    : "";
-  const marketLine = market && market.url
-    ? `\n\nThis tweet is about a specific live Polymarket market:\nTitle: ${market.title}\nURL: ${market.url}${market.volume ? `\nVolume: ${market.volume}` : ''}\n\nGround the tweet in this specific market. Reference what it's really asking. Include the polymarket link exactly as-is on its own line at the very end of the tweet.`
-    : "";
-  return `Angle: ${angleMap[angle]}\n${toneMap[tone]}${contextLine}${marketLine}\n\nWrite the tweet now.`;
+  const ctx = context.trim() ? `\n\nextra context (work in naturally): "${context.trim()}"` : "";
+  return `angle: ${angleMap[angle]}\n${toneMap[tone]}${ctx}\n\nall lowercase. write the tweet now. return ONLY the tweet.`;
 }
 
 export default function App() {
@@ -103,20 +127,35 @@ export default function App() {
     setLoading(true);
     setCopied(false);
     try {
+      const useMarket = !!(market && market.url);
+      const body = {
+        model: "claude-sonnet-4-6",
+        max_tokens: 1000,
+        system: SYSTEM_PROMPT,
+        messages: [{
+          role: "user",
+          content: useMarket
+            ? buildMarketPrompt(angle, tone, context, market)
+            : buildEvergreenPrompt(angle, tone, context),
+        }],
+      };
+      // enable live web search only for market-reaction tweets (needs current news)
+      if (useMarket) body.tools = [{ type: "web_search_20250305", name: "web_search" }];
+
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1000,
-          system: SYSTEM_PROMPT,
-          messages: [{ role: "user", content: buildPrompt(angle, tone, context, market) }],
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
-      const text = data.content?.find((b) => b.type === "text")?.text?.trim() ?? "";
-      let final = text;
-      if (market && market.url && !final.includes(market.url)) final = `${final}\n\n${market.url}`;
+
+      // with web search there can be several content blocks; the final tweet is the last text block
+      const textBlocks = (data.content || []).filter((b) => b.type === "text");
+      let final = textBlocks.length ? textBlocks[textBlocks.length - 1].text.trim() : "";
+      if (!final && data.error) final = "generation failed: " + (data.error.message || data.error);
+      if (useMarket && market.url && final && !final.includes(market.url)) {
+        final = `${final}\n\n${market.url}`;
+      }
       setTweet(final);
       if (final) setHistory((h) => [{ text: final, angle, tone, market }, ...h].slice(0, 6));
     } catch (e) {
@@ -136,6 +175,11 @@ export default function App() {
   const overLimit = charCount > 280;
   const mono = "'JetBrains Mono', 'Courier New', monospace";
 
+  const probLabel = (m) => {
+    if (m.probability == null) return null;
+    return m.binary ? `now ${m.probability}%` : `${m.leader} ${m.probability}%`;
+  };
+
   return (
     <div style={{ minHeight: "100vh", background: "#08080E", color: "#E8EDF2", fontFamily: "'Inter', system-ui, sans-serif", display: "flex", flexDirection: "column" }}>
       <header style={{ borderBottom: "1px solid #1E2535", padding: "16px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(8,8,14,0.95)", position: "sticky", top: 0, zIndex: 10 }}>
@@ -150,7 +194,6 @@ export default function App() {
 
         <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
 
-          {/* CATEGORY → auto-loads markets */}
           <div>
             <div style={{ fontFamily: mono, fontSize: "9px", color: "#4A8099", letterSpacing: "2.5px", textTransform: "uppercase", marginBottom: "12px" }}>// trending market</div>
             <div style={{ display: "flex", gap: "6px", marginBottom: "10px" }}>
@@ -168,15 +211,17 @@ export default function App() {
               <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "4px" }}>
                 {markets.map((m) => (
                   <button key={m.id} onClick={() => setMarket(m)} style={{ textAlign: "left", padding: "10px 12px", background: market && market.id === m.id ? "rgba(124,185,204,0.08)" : "#0F0F18", border: `1px solid ${market && market.id === m.id ? "#4A8099" : "#1E2535"}`, borderRadius: "8px", cursor: "pointer", transition: "all 0.15s" }}>
-                    <div style={{ fontSize: "12px", color: market && market.id === m.id ? "#E8EDF2" : "#8B9BAD", lineHeight: "1.4", marginBottom: "3px" }}>{m.title}</div>
-                    {m.volume && <div style={{ fontFamily: mono, fontSize: "9px", color: "#4A5566" }}>vol ${Number(m.volume).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>}
+                    <div style={{ fontSize: "12px", color: market && market.id === m.id ? "#E8EDF2" : "#8B9BAD", lineHeight: "1.4", marginBottom: "4px" }}>{m.title}</div>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                      {probLabel(m) && <span style={{ fontFamily: mono, fontSize: "10px", color: "#3DBE7A" }}>{probLabel(m)}</span>}
+                      {m.volume && <span style={{ fontFamily: mono, fontSize: "9px", color: "#4A5566" }}>vol ${Number(m.volume).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>}
+                    </div>
                   </button>
                 ))}
               </div>
             )}
           </div>
 
-          {/* ANGLE */}
           <div>
             <div style={{ fontFamily: mono, fontSize: "9px", color: "#4A8099", letterSpacing: "2.5px", textTransform: "uppercase", marginBottom: "12px" }}>// angle</div>
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -192,7 +237,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* TONE */}
           <div>
             <div style={{ fontFamily: mono, fontSize: "9px", color: "#4A8099", letterSpacing: "2.5px", textTransform: "uppercase", marginBottom: "12px" }}>// tone</div>
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -208,7 +252,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* CONTEXT */}
           <div>
             <div style={{ fontFamily: mono, fontSize: "9px", color: "#4A8099", letterSpacing: "2.5px", textTransform: "uppercase", marginBottom: "12px" }}>// context (optional)</div>
             <textarea value={context} onChange={(e) => setContext(e.target.value)} placeholder="any specific insight, trade, data point, or angle you want to work in…" rows={4} style={{ width: "100%", background: "#0F0F18", border: "1px solid #1E2535", borderRadius: "8px", color: "#E8EDF2", fontFamily: "'Inter', sans-serif", fontSize: "12px", lineHeight: "1.6", padding: "12px 14px", resize: "vertical", outline: "none", boxSizing: "border-box" }} />
@@ -219,7 +262,6 @@ export default function App() {
           </button>
         </div>
 
-        {/* RIGHT */}
         <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
           <div style={{ background: "#0F0F18", border: `1px solid ${overLimit ? "#E05555" : "#1E2535"}`, borderRadius: "12px", overflow: "hidden", minHeight: "220px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "12px", padding: "16px 20px", borderBottom: "1px solid #1E2535" }}>
@@ -238,7 +280,7 @@ export default function App() {
                   {[100, 85, 92, 60].map((w, i) => (<div key={i} style={{ height: "14px", width: `${w}%`, background: "#1E2535", borderRadius: "3px", animation: `pulse 1.4s ease-in-out ${i * 0.1}s infinite` }} />))}
                 </div>
               ) : (
-                <div style={{ fontFamily: mono, fontSize: "11px", color: "#2A3545", paddingTop: "8px", lineHeight: "1.7" }}>pick a category to load a trending market<br />then generate →</div>
+                <div style={{ fontFamily: mono, fontSize: "11px", color: "#2A3545", paddingTop: "8px", lineHeight: "1.7" }}>pick a category, tap a trending market<br />then generate →</div>
               )}
             </div>
             {tweet && !loading && (
