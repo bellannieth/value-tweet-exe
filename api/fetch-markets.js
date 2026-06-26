@@ -1,32 +1,41 @@
 export default async function handler(req, res) {
-  const proxyKey = process.env.PROXY_KEY;
-  if (proxyKey) {
-    const provided = req.headers['x-proxy-key'] || req.headers['x-proxykey'];
-    if (!provided || provided !== proxyKey) return res.status(401).json({ error: 'missing or invalid proxy key' });
-  }
+  const category = (req.query.category || 'politics').toLowerCase();
+
+  const tagMap = {
+    politics: ['politics', 'us-politics', 'elections', 'election', 'government', 'congress', 'trump', 'biden'],
+    sports:   ['sports', 'nba', 'nfl', 'soccer', 'football', 'baseball', 'mlb', 'nhl', 'cricket', 'tennis', 'ufc', 'boxing'],
+  };
+  const tags = tagMap[category] || tagMap.politics;
+
   try {
-    // Polymarket's public Gamma API. Order by liquidity (desc) and exclude
-    // closed markets; fall back to a plain active-markets query.
-    const endpoints = [
-      'https://gamma-api.polymarket.com/markets?active=true&closed=false&order=liquidity&ascending=false&limit=20',
-      'https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=20',
-    ];
-    for (const url of endpoints) {
-      try {
-        const r = await fetch(url);
-        if (!r.ok) continue;
-        const j = await r.json();
-        // normalize
-        const items = Array.isArray(j) ? j : j.markets || j.data || j.results || [];
-        const candidate = items.find((m) => m && !m.resolved && (m.liquidity || m.totalLiquidity || m.volume));
-        if (candidate) {
-          return res.status(200).json({ markets: items });
-        }
-      } catch (e) {
-        // try next
-      }
-    }
-    return res.status(502).json({ error: 'no market data from upstream' });
+    const url = 'https://gamma-api.polymarket.com/markets?limit=40&active=true&closed=false&order=volumeNum&ascending=false';
+    const r = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!r.ok) throw new Error('gamma api ' + r.status);
+
+    const items = await r.json();
+    const list = Array.isArray(items) ? items : (items.data || items.markets || []);
+
+    const matches = list.filter((m) => {
+      if (m.closed || m.active === false) return false;
+      const t = (m.tags || []).map((x) => (typeof x === 'string' ? x : (x.label || x.slug || '')).toLowerCase());
+      const title = (m.question || m.title || '').toLowerCase();
+      return tags.some((tag) => t.includes(tag) || title.includes(tag));
+    });
+
+    const pool = matches.length ? matches : list;
+    const top = pool
+      .sort((a, b) => (parseFloat(b.volumeNum) || 0) - (parseFloat(a.volumeNum) || 0))
+      .slice(0, 6)
+      .map((m) => ({
+        id: m.id,
+        title: m.question || m.title,
+        slug: m.slug,
+        url: m.slug ? `https://polymarket.com/event/${m.slug}` : 'https://polymarket.com',
+        liquidity: m.liquidityNum || m.liquidity || null,
+        volume: m.volumeNum || m.volume || null,
+      }));
+
+    return res.status(200).json({ markets: top, category });
   } catch (e) {
     return res.status(500).json({ error: String(e) });
   }
