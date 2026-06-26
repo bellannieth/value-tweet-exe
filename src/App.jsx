@@ -61,6 +61,25 @@ function buildPrompt(angle, tone, context, market) {
   return `Angle: ${angleMap[angle]}\n${toneMap[tone]}${contextLine}${marketLine}\n\nWrite the tweet now.`;
 }
 
+const NEWS_SYSTEM_PROMPT = `You write short, factual, breaking-news style tweets for an audience that follows prediction markets.
+
+Rules:
+- report the news plainly and accurately. neutral, declarative tone. no opinion, no hype, no emojis, no hashtags.
+- one or two short sentences. lead with who/what. include the concrete specifics (names, places, numbers) that make it newsworthy.
+- do NOT invent facts. only state what is supported by the provided news or your search results.
+- put the provided Polymarket link on its own final line, exactly as given — do not alter, shorten, or drop any query parameters.
+- the entire tweet including the link must be under 280 characters.
+
+Output ONLY the tweet text. No quotes, no commentary, no explanation.`;
+
+function buildNewsPrompt(link, context) {
+  const trimmed = context.trim();
+  if (trimmed) {
+    return `Turn this news into a single breaking-news style tweet:\n\n"${trimmed}"\n\nPolymarket link to include verbatim on the last line: ${link}\n\nWrite the tweet now.`;
+  }
+  return `Use web search to find the single most significant, recent, real news development related to this Polymarket market, then write a breaking-news style tweet about it. Confirm the news is current before writing.\n\nMarket link (include verbatim on the last line): ${link}\n\nWrite the tweet now.`;
+}
+
 export default function App() {
   const [angle, setAngle] = useState("myth");
   const [tone, setTone] = useState("cold");
@@ -72,6 +91,9 @@ export default function App() {
   const [market, setMarket] = useState(null);
   const [marketUrlInput, setMarketUrlInput] = useState("");
   const [fetchError, setFetchError] = useState("");
+  const [mode, setMode] = useState("news");
+  const [newsLink, setNewsLink] = useState("");
+  const [newsContext, setNewsContext] = useState("");
 
   const generate = useCallback(async () => {
     setLoading(true);
@@ -106,7 +128,57 @@ export default function App() {
     }
     setLoading(false);
   }, [angle, tone, context, market]);
-  
+
+  // news mode: turn a trending story (pasted, or found via web search) into a
+  // factual tweet that ends with the user's polymarket link
+  const generateNews = useCallback(async () => {
+    const link = newsLink.trim();
+    if (!link) return;
+    setLoading(true);
+    setCopied(false);
+    try {
+      const headers = { "Content-Type": "application/json" };
+      const proxyKey = import.meta.env.VITE_PROXY_KEY;
+      if (proxyKey) headers["x-proxy-key"] = proxyKey;
+
+      const useSearch = !newsContext.trim();
+      const body = {
+        model: "claude-sonnet-4-6",
+        max_tokens: 1000,
+        system: NEWS_SYSTEM_PROMPT,
+        messages: [{ role: "user", content: buildNewsPrompt(link, newsContext) }],
+      };
+      // when no news is pasted, let the model pull the latest story itself
+      if (useSearch) {
+        body.tools = [{ type: "web_search_20260209", name: "web_search", max_uses: 5 }];
+      }
+
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        const msg = (data.error && (data.error.message || data.error)) || `request failed (${res.status})`;
+        setTweet(`generation failed: ${msg}`);
+        setLoading(false);
+        return;
+      }
+      // web search prepends extra text blocks — the tweet is the last one
+      const textBlocks = (data.content || []).filter((b) => b.type === "text");
+      let final = (textBlocks.length ? textBlocks[textBlocks.length - 1].text : "").trim();
+      if (final && !final.includes(link)) final = `${final}\n\n${link}`;
+      setTweet(final || "no tweet produced. try pasting the news directly.");
+      if (final) {
+        setHistory((h) => [{ text: final, angle: "news", tone: useSearch ? "web-search" : "pasted", market: { url: link } }, ...h].slice(0, 6));
+      }
+    } catch (e) {
+      setTweet("generation failed. check your connection and try again.");
+    }
+    setLoading(false);
+  }, [newsLink, newsContext]);
+
   // try to fetch trending high-liquidity unresolved markets from Polymarket
   const fetchTrendingMarket = useCallback(async () => {
     setFetchError("");
@@ -225,6 +297,66 @@ export default function App() {
         {/* LEFT: Controls */}
         <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
 
+          {/* Mode toggle */}
+          <div style={{ display: "flex", gap: "6px" }}>
+            {[{ id: "news", label: "trending news" }, { id: "takes", label: "market takes" }].map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setMode(m.id)}
+                style={{
+                  flex: 1,
+                  padding: "10px",
+                  borderRadius: "8px",
+                  cursor: "pointer",
+                  fontFamily: "'JetBrains Mono', monospace",
+                  fontSize: "11px",
+                  letterSpacing: "0.5px",
+                  background: mode === m.id ? "rgba(124,185,204,0.08)" : "#0F0F18",
+                  border: `1px solid ${mode === m.id ? "#4A8099" : "#1E2535"}`,
+                  color: mode === m.id ? "#E8EDF2" : "#6B7B8D",
+                  transition: "all 0.15s",
+                }}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+
+          {/* News mode controls */}
+          {mode === "news" && (
+            <>
+              <div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "9px", color: "#4A8099", letterSpacing: "2.5px", textTransform: "uppercase", marginBottom: "12px" }}>
+                  // polymarket link
+                </div>
+                <input
+                  value={newsLink}
+                  onChange={(e) => setNewsLink(e.target.value)}
+                  placeholder="https://polymarket.com/... (paste your link)"
+                  style={{ width: "100%", boxSizing: "border-box", padding: "12px 14px", borderRadius: "8px", background: "#0F0F18", border: "1px solid #1E2535", color: "#E8EDF2", fontSize: "12px" }}
+                />
+              </div>
+              <div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: "9px", color: "#4A8099", letterSpacing: "2.5px", textTransform: "uppercase", marginBottom: "12px" }}>
+                  // news or topic (optional)
+                </div>
+                <textarea
+                  value={newsContext}
+                  onChange={(e) => setNewsContext(e.target.value)}
+                  placeholder="paste the news/headline to turn into a tweet — or leave blank to auto-find the latest news from the link"
+                  rows={5}
+                  style={{ width: "100%", boxSizing: "border-box", background: "#0F0F18", border: "1px solid #1E2535", borderRadius: "8px", color: "#E8EDF2", fontFamily: "'Inter', sans-serif", fontSize: "12px", lineHeight: "1.6", padding: "12px 14px", resize: "vertical", outline: "none" }}
+                />
+                <div style={{ fontSize: "11px", color: "#4A5566", marginTop: "6px", lineHeight: 1.5 }}>
+                  leave blank and the app web-searches the latest trending news tied to this market.
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Prediction-market takes controls */}
+          {mode === "takes" && (
+          <>
           {/* Angle */}
           <div>
             <div style={{
@@ -430,11 +562,13 @@ export default function App() {
             )}
           </div>
           </div>
+          </>
+          )}
 
           {/* Generate */}
           <button
-            onClick={generate}
-            disabled={loading}
+            onClick={mode === "news" ? generateNews : generate}
+            disabled={loading || (mode === "news" && !newsLink.trim())}
             style={{
               padding: "14px",
               background: loading ? "#1E2535" : "#7CB9CC",

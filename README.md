@@ -21,6 +21,10 @@ Notes:
 - The UI calls the Anthropics API in `src/App.jsx` — add your API key and proxy as needed.
 - If you prefer yarn: `yarn` then `yarn dev`.
 
+Modes
+- **trending news** (default): paste a Polymarket link, then either paste the news/headline to turn into a tweet, or leave it blank to have the app web-search the latest trending news tied to that market. The link is always attached verbatim (referral params like `?via=...` are preserved). Auto web-search uses Anthropic's `web_search` server tool, so your Anthropic account/key must have web search enabled.
+- **market takes**: the original generator — pick an angle + tone for a cold prediction-markets take in the @Bellannieth voice.
+
 Serverless proxy & deployment
 This repo includes example serverless proxies for Anthropic and Polymarket for both Vercel (`/api/*.js`) and Netlify (`/netlify/functions/*.js`).
 Set `ANTHROPIC_API_KEY` in your deployment environment variables (Netlify/Vercel) or in a local `.env` when testing locally.
