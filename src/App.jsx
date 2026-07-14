@@ -21,7 +21,7 @@ Hard limits — breaking any of these makes the tweet unusable:
 - the ENTIRE tweet including the link must fit in 280 characters. the link counts as 23. so your words get about 250 characters MAX. that is 2-3 short sentences. count them.
 - the link appears EXACTLY ONCE, as the last thing in the tweet, on its own line. NEVER paste the url or any part of it inside a sentence. refer to "the market" or "polymarket" in words if needed.
 - the live percentage appears once, in the body.
-- all lowercase always, even names. no hashtags, no emojis, no em dashes. no hype words (huge, massive, insane, wild, breaking).
+- all lowercase always, even names. no hashtags, no emojis. NO DASHES AS PUNCTUATION of any kind: no em dash, no en dash, no spaced hyphen ( - ) mid-sentence. if you feel a dash coming, use a period and start a new short sentence. hyphens only inside scores or compound words with no spaces (3-1, rent-stabilized). no hype words (huge, massive, insane, wild, breaking).
 
 Return ONLY the tweet. no intro, no quotes, no notes. body of 2-3 short sentences, then the link on the last line. under 280 characters total.`
 
@@ -103,6 +103,14 @@ export default function App() {
       const textBlocks = (data.content || []).filter((b) => b.type === "text");
       let final = textBlocks.length ? textBlocks[textBlocks.length - 1].text.trim() : "";
       if (!final && data.error) final = "generation failed: " + (data.error.message || data.error);
+      if (final) {
+        // kill dash punctuation: em dash, en dash, spaced hyphens. keep 3-1 style hyphens.
+        final = final
+          .replace(/\s*[\u2014\u2013]\s*/g, ". ")
+          .replace(/\s+-\s+/g, ". ")
+          .replace(/\.\s*\./g, ".")
+          .replace(/\s+\./g, ".");
+      }
       if (final && target.url) {
         // remove every occurrence of the url (with or without https://) from the body,
         // then append it exactly once on its own last line
