@@ -10,41 +10,62 @@ const CATEGORIES = [
   { id: "economy", label: "economy" },
 ];
 
-const SYSTEM_PROMPT = `You write ready-to-post prediction-market tweets for Bellannie (@Bellannieth) on X.
+const SYSTEM_PROMPT = `You write prediction-market tweets for Bellannie (@Bellannieth) on X. She trades real money on Polymarket. Her tweets make someone stop, think, and click.
 
-Hard format rules — never break these:
-- all lowercase, ALWAYS. no capital letters anywhere, including proper nouns. "france" not "France". "openai" not "OpenAI".
-- no hashtags, no emojis, no em dashes (—). hyphens in scores like 3-1 are fine.
-- no hype, no spin, no opinion words. flat, factual, declarative.
+What makes her tweets land:
+- they say something the headline doesn't. not a recap. a point. what the number really means, what most people are getting wrong, what has to happen next, or the detail that surprises you when you look closely.
+- one sharp idea per tweet. never a list.
+- plain words. write like you're explaining it to a smart 10-year-old. short words, short sentences, zero jargon, zero finance-speak. if a normal person wouldn't say it out loud, cut it.
+- every tweet is shaped differently. sometimes open with the number. sometimes the news. sometimes a question. sometimes what's at stake. never reuse the same skeleton twice.
 
-Output format — exactly this, nothing else:
-line 1: a 1-2 sentence factual summary of the specific breaking news event behind the market. concrete. no filler.
-line 2: "[X]% chance [what the market is predicting]" then the polymarket url.
+Hard rules:
+- all lowercase. always. even names. "france" not "France".
+- no hashtags, no emojis, no em dashes. hyphens in scores (3-1) are fine.
+- honest and flat. no hype words (huge, massive, insane, wild, breaking). you're not selling.
+- must include the real live percentage and the real market link, worked in naturally. they do NOT have to sit on their own line.
 
-Return ONLY the draft. no intro, no explanation, no quotes, no commentary. real news, real odds, real url. nothing else.`;
+Return ONLY the tweet. no intro, no quotes, no notes, no label. lowercase. one original insight, simple words, the number, the link.`
 
 function buildDraftPrompt(market, context) {
   const oddsLine = market.probability != null
     ? (market.binary
-        ? `current live odds: ${market.probability}% (yes)`
-        : `current live odds: ${market.leader} leading at ${market.probability}%`)
-    : `current live odds: check the market page`;
+        ? `the market's live chance: ${market.probability}% yes`
+        : `the market's live read: ${market.leader} leading at ${market.probability}%`)
+    : `live odds: check the market page`;
+
+  const lenses = [
+    "did the odds move recently? lead with the move and what caused it.",
+    "is there a gap between what people assume and what the market actually thinks? point it out.",
+    "what would actually have to happen for this to hit? make it concrete.",
+    "is the number surprising in either direction? open with why.",
+    "who or what is driving this right now? name it plainly.",
+    "what is already priced in that people haven't noticed?",
+    "strip it to the one fact that matters most and start there.",
+  ];
+  const lens = lenses[Math.floor(Math.random() * lenses.length)];
+
   const ctx = context.trim()
     ? `\n\noptional steer from bellannie (use only if it fits the real news, never invent): "${context.trim()}"`
     : "";
+
   return `here is a real, open polymarket market trending right now:
 
 market: ${market.title}
 ${oddsLine}
 url: ${market.url}
 
-step 1: use the web_search tool to find the biggest specific breaking news story behind this market right now (last few days). get real event, real names, real numbers.
+step 1: use the web_search tool to find what's actually happening with this in the last few days. don't stop at the headline. hunt for the interesting part: a move in the odds, a mismatch between what people assume and what the market thinks, what would have to happen for it to resolve, who's driving it, real names and numbers.
 
-step 2: output ONLY a ready-to-post draft in this exact format:
-line 1: 1-2 sentence factual news summary of that event. no spin, no hashtags, no emojis, no em dashes.
-line 2: ${market.probability != null ? `${market.probability}%` : "[X]%"} chance [what the market is predicting], then the url: ${market.url}
+step 2: write ONE original tweet in bellannie's voice.
+- lead with the most interesting thing you found, not a flat recap.
+- say something the headline doesn't say. give a real read, not a summary.
+- plain words, like talking to a smart kid. short. no jargon.
+- work the real chance (${market.probability != null ? market.probability + "%" : "the live %"}) and the link into the tweet naturally: ${market.url}
+- do NOT use a fixed format or a two-line template. let the shape follow the idea.
 
-use the real odds above (${market.probability != null ? market.probability + "%" : "find them"}). all lowercase. real news. real url. real odds. nothing else.${ctx}`;
+lens for this one (only if it fits, otherwise ignore): ${lens}${ctx}
+
+return only the tweet. lowercase. nothing else.`;
 }
 
 export default function App() {
@@ -74,6 +95,7 @@ export default function App() {
         max_tokens: 1000,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: buildDraftPrompt(target, context) }],
+        temperature: 1,
         tools: [{ type: "web_search_20250305", name: "web_search" }],
       };
       const res = await fetch("/api/generate", {
