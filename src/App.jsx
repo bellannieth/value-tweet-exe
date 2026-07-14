@@ -12,19 +12,18 @@ const CATEGORIES = [
 
 const SYSTEM_PROMPT = `You write prediction-market tweets for Bellannie (@Bellannieth) on X. She trades real money on Polymarket. Her tweets make someone stop, think, and click.
 
-What makes her tweets land:
-- they say something the headline doesn't. not a recap. a point. what the number really means, what most people are getting wrong, what has to happen next, or the detail that surprises you when you look closely.
-- one sharp idea per tweet. never a list.
-- plain words. write like you're explaining it to a smart 10-year-old. short words, short sentences, zero jargon, zero finance-speak. if a normal person wouldn't say it out loud, cut it.
-- every tweet is shaped differently. sometimes open with the number. sometimes the news. sometimes a question. sometimes what's at stake. never reuse the same skeleton twice.
+The craft:
+- ONE sharp idea. the single most interesting thing about this market right now. not a recap, not a list of points. pick the best one and cut everything else.
+- plain words a 10-year-old gets. short sentences. zero jargon.
+- shape can vary (open with the number, the news, the tension) but it is always TIGHT.
 
-Hard rules:
-- all lowercase. always. even names. "france" not "France".
-- no hashtags, no emojis, no em dashes. hyphens in scores (3-1) are fine.
-- honest and flat. no hype words (huge, massive, insane, wild, breaking). you're not selling.
-- must include the real live percentage and the real market link, worked in naturally. they do NOT have to sit on their own line.
+Hard limits — breaking any of these makes the tweet unusable:
+- the ENTIRE tweet including the link must fit in 280 characters. the link counts as 23. so your words get about 250 characters MAX. that is 2-3 short sentences. count them.
+- the link appears EXACTLY ONCE, as the last thing in the tweet, on its own line. NEVER paste the url or any part of it inside a sentence. refer to "the market" or "polymarket" in words if needed.
+- the live percentage appears once, in the body.
+- all lowercase always, even names. no hashtags, no emojis, no em dashes. no hype words (huge, massive, insane, wild, breaking).
 
-Return ONLY the tweet. no intro, no quotes, no notes, no label. lowercase. one original insight, simple words, the number, the link.`
+Return ONLY the tweet. no intro, no quotes, no notes. body of 2-3 short sentences, then the link on the last line. under 280 characters total.`
 
 function buildDraftPrompt(market, context) {
   const oddsLine = market.probability != null
@@ -35,12 +34,11 @@ function buildDraftPrompt(market, context) {
 
   const lenses = [
     "did the odds move recently? lead with the move and what caused it.",
-    "is there a gap between what people assume and what the market actually thinks? point it out.",
-    "what would actually have to happen for this to hit? make it concrete.",
-    "is the number surprising in either direction? open with why.",
+    "is there a gap between what people assume and what the market thinks? point it out in one line.",
+    "what one thing has to happen for this to hit? say it concretely.",
+    "is the number surprising? open with why in one line.",
     "who or what is driving this right now? name it plainly.",
-    "what is already priced in that people haven't noticed?",
-    "strip it to the one fact that matters most and start there.",
+    "what's already priced in that people haven't noticed?",
   ];
   const lens = lenses[Math.floor(Math.random() * lenses.length)];
 
@@ -54,18 +52,16 @@ market: ${market.title}
 ${oddsLine}
 url: ${market.url}
 
-step 1: use the web_search tool to find what's actually happening with this in the last few days. don't stop at the headline. hunt for the interesting part: a move in the odds, a mismatch between what people assume and what the market thinks, what would have to happen for it to resolve, who's driving it, real names and numbers.
+step 1: use the web_search tool to find what's actually happening with this in the last few days. real names, real numbers. find the single most interesting thing — a move, a mismatch, a surprise.
 
-step 2: write ONE original tweet in bellannie's voice.
-- lead with the most interesting thing you found, not a flat recap.
-- say something the headline doesn't say. give a real read, not a summary.
-- plain words, like talking to a smart kid. short. no jargon.
-- work the real chance (${market.probability != null ? market.probability + "%" : "the live %"}) and the link into the tweet naturally: ${market.url}
-- do NOT use a fixed format or a two-line template. let the shape follow the idea.
+step 2: write the tweet. ONE idea only. 2-3 short plain sentences with the live chance (${market.probability != null ? market.probability + "%" : "the live %"}) worked in, then the link alone on the last line:
+${market.url}
+
+the whole thing must fit in 280 characters including the link (link counts as 23). if your draft is longer, cut sentences until it fits. never put the url inside a sentence — it only appears once, at the end.
 
 lens for this one (only if it fits, otherwise ignore): ${lens}${ctx}
 
-return only the tweet. lowercase. nothing else.`;
+return only the tweet. lowercase. under 280 characters. nothing else.`;
 }
 
 export default function App() {
@@ -107,7 +103,18 @@ export default function App() {
       const textBlocks = (data.content || []).filter((b) => b.type === "text");
       let final = textBlocks.length ? textBlocks[textBlocks.length - 1].text.trim() : "";
       if (!final && data.error) final = "generation failed: " + (data.error.message || data.error);
-      if (target.url && final && !final.includes(target.url)) final = `${final}\n${target.url}`;
+      if (final && target.url) {
+        // remove every occurrence of the url (with or without https://) from the body,
+        // then append it exactly once on its own last line
+        const bare = target.url.replace(/^https?:\/\//, "");
+        final = final
+          .split("\n")
+          .map((line) => line.replaceAll(target.url, "").replaceAll(bare, "").trimEnd())
+          .join("\n")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim();
+        final = `${final}\n${target.url}`;
+      }
       setTweet(final);
       if (final) setHistory((h) => [{ text: final, title: target.title }, ...h].slice(0, 8));
     } catch (e) {
