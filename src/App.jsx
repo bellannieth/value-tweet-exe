@@ -10,20 +10,21 @@ const CATEGORIES = [
   { id: "economy", label: "economy" },
 ];
 
-const SYSTEM_PROMPT = `You write ready-to-post prediction-market tweets for Bellannie (@Bellannieth) on X. The style is the clean news format: what happened, then the odds.
+const SYSTEM_PROMPT = `You write ready-to-post prediction-market tweets for Bellannie (@Bellannieth) on X.
 
-Output format, exactly this:
-line 1: a 1-2 sentence factual summary of the specific breaking news event behind the market. concrete and specific. real names, real numbers. no spin, no opinion.
-line 2: the odds stated plainly: "[X]% chance [what the market is predicting]"
-line 3: the polymarket link, alone.
+The structure is FIXED. Three parts, always in this exact order:
+part 1 (news): one tight factual sentence on the specific event behind the market. real names, real numbers. NEVER open the tweet with a percentage or any number. open with what happened.
+part 2 (insight): one short sentence of sharp context the headline does not say. why it matters, what it changes, or the detail people miss. plain words.
+part 3 (polymarket data): the odds stated plainly as "[X]% chance [what the market is predicting]" and then the link alone on the final line.
 
 Hard rules, breaking any makes the tweet unusable:
-- whole tweet including link fits in 280 characters. link counts as 23. keep the news line tight.
+- whole tweet including link fits in 280 characters. link counts as 23. keep every part tight.
 - the link appears EXACTLY ONCE, alone on the last line. never inside a sentence.
+- the percentage appears ONLY in part 3. never in part 1 or part 2.
 - all lowercase always, even names. no hashtags, no emojis. NO DASHES AS PUNCTUATION: no em dash, no en dash, no spaced hyphen ( - ). use a period and a new sentence instead. hyphens only inside scores or compounds with no spaces (3-1, rent-stabilized).
-- no hype words (huge, massive, insane, wild, breaking). flat and factual.
+- no hype words (huge, massive, insane, wild, breaking). no "feels cheap", no "i think", no takes, no opinions on the odds. the insight is factual context, not a trading call.
 
-Return ONLY the tweet. no intro, no quotes, no notes. real news, real odds, real url. nothing else.`
+Return ONLY the tweet. no intro, no quotes, no notes. news, then insight, then odds and link. nothing else.`
 
 function buildDraftPrompt(market, context) {
   const oddsLine = market.probability != null
@@ -42,14 +43,15 @@ market: ${market.title}
 ${oddsLine}
 url: ${market.url}
 
-step 1: use the web_search tool to find the specific breaking news story behind this market right now (last few days). real event, real names, real numbers.
+step 1: use the web_search tool to find the specific breaking news story behind this market (last few days). verify names and facts carefully. do not mix up teams, coaches, or players.
 
-step 2: output ONLY a ready-to-post draft in this exact format:
-line 1: 1-2 sentence factual news summary of that event. specific. no spin.
-line 2: ${market.probability != null ? `${market.probability}%` : "[X]%"} chance [what the market is predicting]
-line 3: ${market.url}
+step 2: output ONLY the tweet in this exact order:
+part 1: one factual news sentence about the event. do NOT start with a number or percentage.
+part 2: one short insight sentence. context the headline misses. factual, not an opinion on the odds.
+part 3: ${market.probability != null ? `${market.probability}%` : "[X]%"} chance [what the market is predicting]
+last line: ${market.url}
 
-whole thing under 280 characters including the link (counts as 23). if too long, cut the news line until it fits. all lowercase. no dashes as punctuation. real news, real odds, real url. nothing else.${ctx}`;
+whole thing under 280 characters including the link (counts as 23). if too long, tighten parts 1 and 2. all lowercase. no dashes as punctuation. the percentage appears only in part 3.${ctx}`;
 }
 
 export default function App() {
