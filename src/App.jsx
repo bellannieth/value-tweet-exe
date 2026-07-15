@@ -10,39 +10,27 @@ const CATEGORIES = [
   { id: "economy", label: "economy" },
 ];
 
-const SYSTEM_PROMPT = `You write tweets for Bellannie (@Bellannieth), a prediction markets trader on X. Not a news account. A person with real money on the line and opinions about where the crowd is wrong.
+const SYSTEM_PROMPT = `You write ready-to-post prediction-market tweets for Bellannie (@Bellannieth) on X. The style is the clean news format: what happened, then the odds.
 
-The voice. This is the whole game:
-- she has a TAKE. every tweet takes a position or makes a call. "this is cheap." "the market knows something the media doesn't." "i don't buy it." never neutral, never both-sides, never just reporting.
-- she reasons out loud, fast. take, then the one fact that backs it. like she's telling a sharp friend why she's right, not filing a report.
-- conversational rhythm. how people actually type. sentence fragments fine. starting with "so" or "look" or "nah" fine. a little dry humor fine. reads like a person, not a press release.
-- confident but not cocky. she can say "i think" or "feels wrong to me." real traders own their reads.
-- zero corporate stiffness. if a sentence could open a news broadcast, rewrite it. "france opened their campaign with a victory" is dead. "france looks scary and the market still has them under 40%" is alive.
+Output format, exactly this:
+line 1: a 1-2 sentence factual summary of the specific breaking news event behind the market. concrete and specific. real names, real numbers. no spin, no opinion.
+line 2: the odds stated plainly: "[X]% chance [what the market is predicting]"
+line 3: the polymarket link, alone.
 
-Hard limits, non-negotiable:
-- whole tweet including link fits in 280 characters. link counts as 23. so roughly 250 for words. 2-3 short sentences.
-- link appears EXACTLY ONCE, alone on the last line. never inside a sentence.
-- the live percentage appears once in the body.
-- all lowercase always, even names. no hashtags, no emojis. NO DASHES AS PUNCTUATION: no em dash, no en dash, no spaced hyphen ( - ). use a period instead. hyphens only in scores or compounds with no spaces (3-1, rent-stabilized). no hype words (huge, massive, insane, wild, breaking).
+Hard rules, breaking any makes the tweet unusable:
+- whole tweet including link fits in 280 characters. link counts as 23. keep the news line tight.
+- the link appears EXACTLY ONCE, alone on the last line. never inside a sentence.
+- all lowercase always, even names. no hashtags, no emojis. NO DASHES AS PUNCTUATION: no em dash, no en dash, no spaced hyphen ( - ). use a period and a new sentence instead. hyphens only inside scores or compounds with no spaces (3-1, rent-stabilized).
+- no hype words (huge, massive, insane, wild, breaking). flat and factual.
 
-Return ONLY the tweet. no intro, no quotes, no notes. under 280 characters.`
+Return ONLY the tweet. no intro, no quotes, no notes. real news, real odds, real url. nothing else.`
 
 function buildDraftPrompt(market, context) {
   const oddsLine = market.probability != null
     ? (market.binary
-        ? `the market's live chance: ${market.probability}% yes`
-        : `the market's live read: ${market.leader} leading at ${market.probability}%`)
-    : `live odds: check the market page`;
-
-  const lenses = [
-    "did the odds move recently? lead with the move and what caused it.",
-    "is there a gap between what people assume and what the market thinks? point it out in one line.",
-    "what one thing has to happen for this to hit? say it concretely.",
-    "is the number surprising? open with why in one line.",
-    "who or what is driving this right now? name it plainly.",
-    "what's already priced in that people haven't noticed?",
-  ];
-  const lens = lenses[Math.floor(Math.random() * lenses.length)];
+        ? `current live odds: ${market.probability}% yes`
+        : `current live odds: ${market.leader} leading at ${market.probability}%`)
+    : `current live odds: check the market page`;
 
   const ctx = context.trim()
     ? `\n\noptional steer from bellannie (use only if it fits the real news, never invent): "${context.trim()}"`
@@ -54,16 +42,14 @@ market: ${market.title}
 ${oddsLine}
 url: ${market.url}
 
-step 1: use the web_search tool to find what's actually happening with this in the last few days. real names, real numbers. find the single most interesting thing — a move, a mismatch, a surprise.
+step 1: use the web_search tool to find the specific breaking news story behind this market right now (last few days). real event, real names, real numbers.
 
-step 2: write the tweet like a trader with a position, not a reporter. pick a side. say what you'd do or what the crowd is missing, then back it with the single best fact you found. ONE idea only. 2-3 short conversational sentences with the live chance (${market.probability != null ? market.probability + "%" : "the live %"}) worked in, then the link alone on the last line:
-${market.url}
+step 2: output ONLY a ready-to-post draft in this exact format:
+line 1: 1-2 sentence factual news summary of that event. specific. no spin.
+line 2: ${market.probability != null ? `${market.probability}%` : "[X]%"} chance [what the market is predicting]
+line 3: ${market.url}
 
-the whole thing must fit in 280 characters including the link (link counts as 23). if your draft is longer, cut sentences until it fits. never put the url inside a sentence — it only appears once, at the end.
-
-lens for this one (only if it fits, otherwise ignore): ${lens}${ctx}
-
-return only the tweet. lowercase. under 280 characters. nothing else.`;
+whole thing under 280 characters including the link (counts as 23). if too long, cut the news line until it fits. all lowercase. no dashes as punctuation. real news, real odds, real url. nothing else.${ctx}`;
 }
 
 export default function App() {
